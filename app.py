@@ -16,7 +16,7 @@ cache_path = "./models"
 MAX_SEED = np.iinfo(np.int32).max
 
 app = App(
-    name="sdxlasync",
+    name="sdxlAsync",
     runtime=Runtime(
         cpu=8,
         memory="32Gi",
@@ -113,6 +113,7 @@ def doSDXL(**inputs):
     pipe, refiner = inputs["context"]
 
     prompt = inputs["prompt"]
+    uuid = inputs["uuid"]
     style = inputs["style"]
     seed = inputs["seed"]
     w = inputs["width"]
