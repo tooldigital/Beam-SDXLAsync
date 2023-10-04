@@ -99,11 +99,11 @@ def load_models():
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    pipe = DiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16, variant="fp16", use_safetensors=True)
+    pipe = DiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", cache_dir=cache_path,torch_dtype=torch.float16, variant="fp16", use_safetensors=True)
     pipe.enable_xformers_memory_efficient_attention()
     pipe = pipe.to(device)
    
-    refiner = DiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-xl-refiner-1.0", use_safetensors=True, torch_dtype=torch.float16, variant="fp16")
+    refiner = DiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-xl-refiner-1.0", cache_dir=cache_path,use_safetensors=True, torch_dtype=torch.float16, variant="fp16")
     refiner.enable_xformers_memory_efficient_attention()
     refiner = refiner.to(device)
 
