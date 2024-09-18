@@ -1,44 +1,42 @@
-from beam import App, Runtime, Image, Output, Volume
-
-import os
 import random
+import torch
+
+import sys
+
+import folder_paths
 
 import numpy as np
-import PIL.Image
-import torch
-from diffusers import DiffusionPipeline
 
-import base64
-from io import BytesIO
-import boto3
+from tool import ToolUtils
 
-cache_path = "./models"
+import PIL
+
+
+
+from nodes import (
+
+    VAEDecode,
+
+    KSamplerAdvanced,
+
+    KSampler,
+
+    EmptyLatentImage,
+
+    CheckpointLoaderSimple,
+
+    CLIPTextEncode,
+
+    LoraLoader,
+
+    ControlNetLoader,
+
+    LoadImage,
+)
+
+
 MAX_SEED = np.iinfo(np.int32).max
 
-app = App(
-    name="sdxlAsync",
-    runtime=Runtime(
-        cpu=8,
-        memory="32Gi",
-        gpu="A10G",
-        image=Image(
-            python_version="python3.10",
-            python_packages=[
-                "accelerate==0.21.0",
-                "boto3",
-                "diffusers==0.19.3",
-                "invisible-watermark==0.2.0",
-                "Pillow==10.0.0",
-                "torch==2.0.1",
-                "transformers==4.31.0",
-                "xformers==0.0.21",
-                "opencv-python"
-            ],
-            commands=["apt-get update && apt-get install ffmpeg libsm6 libxext6  -y"],
-        ),
-    ),
-    volumes=[Volume(name="models", path="./models")],
-)
 
 def set_style(prompt, style):
 
@@ -95,54 +93,53 @@ def set_style(prompt, style):
 
     return final_prompt,negative_prompt
 
-def load_models():
+
+def createImage(_outputname):
+
+    with torch.inference_mode():
+        
+        model_name = "sd_xl_base_1.0.safetensors"
+        steps = 20 
+        cfg = 7
+        sampler = "dpmpp_sde"
+        scheduler = "normal"
+        style = "Cinematic"
+        pos_prompt = "prehistoric tools"
+        neg_prompt = "noisy, blurry, low contrast, cheerful, optimistic, vibrant, colorful"
     
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        #REGULAR MODELS
+        checkpointloadersimple = CheckpointLoaderSimple().load_checkpoint(ckpt_name=model_name)
+        model = checkpointloadersimple[0]
+        clip = checkpointloadersimple[1]
+        vae = checkpointloadersimple[2]
 
-    pipe = DiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-xl-base-1.0", cache_dir=cache_path,torch_dtype=torch.float16, variant="fp16", use_safetensors=True)
-    pipe.enable_xformers_memory_efficient_attention()
-    pipe = pipe.to(device)
-   
-    refiner = DiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-xl-refiner-1.0", cache_dir=cache_path,use_safetensors=True, torch_dtype=torch.float16, variant="fp16")
-    refiner.enable_xformers_memory_efficient_attention()
-    refiner = refiner.to(device)
+        fprompt, fnegprompt = set_style(pos_prompt,style)
 
-    return pipe, refiner
+        #CLIP
+        cliptextencode = CLIPTextEncode()
+        cliptextencode_6 = cliptextencode.encode(text=fprompt,clip=clip)
+        cliptextencode_7 = cliptextencode.encode(text=fnegprompt , clip=clip)
+        clippos = cliptextencode_6[0]
+        clipneg = cliptextencode_7[0]
 
-@app.task_queue(loader=load_models, keep_warm_seconds=300)
-def doSDXL(**inputs):
-    # Grab inputs passed to the API
+        #OUTPUT NODES
+        emptylatentimage = EmptyLatentImage()
+        emptylatentimage_5 = emptylatentimage.generate(width=1024, height=1024, batch_size=1)
+        ksampler = KSampler()
+        vaedecode = VAEDecode()
 
-    pipe, refiner = inputs["context"]
-
-    prompt = inputs["prompt"]
-    uuid = inputs["uuid"]
-    style = inputs["style"]
-    seed = inputs["seed"]
-    w = inputs["width"]
-    h = inputs["height"]
-
-    if(seed == 0):
+        #GENERATION
         seed = random.randint(0, MAX_SEED)
-    
-    generator = torch.Generator().manual_seed(seed)
+        ksampler_10 = ksampler.sample(model=model,seed=123,steps=steps,cfg=cfg,sampler_name=sampler,scheduler=scheduler,positive=clippos,negative=clipneg,latent_image=emptylatentimage_5[0])
+        vaedecode_17 = vaedecode.decode(samples=ksampler_10[0], vae=vae)
 
-    fprompt, fnegprompt = set_style(prompt,style)
-
-
-    int_image = pipe(fprompt, prompt_2="", negative_prompt=fnegprompt, negative_prompt_2="", num_inference_steps=50, height=h, width=w, guidance_scale=10, num_images_per_prompt=1, generator=generator, output_type="latent").images
- 
-    image = refiner(prompt=prompt, prompt_2="", negative_prompt=fnegprompt, negative_prompt_2="", image=int_image).images[0]   
-    
-    image.save("output.png")
-    #SAVE THE IMAGE TO S3 BUCKET
-    # set up boto3 client with credentials from environment variables
-    s3 = boto3.client("s3",region_name='us-east-1',aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'])
-    # get bucket from environment variable
-    bucket = os.environ['AWS_BUCKET']
-
-    s3.upload_file("output.png",bucket,'beamsdxl/'+uuid+'.png', ExtraArgs={'ContentType': "image/png"})
-
+        ToolUtils.tensor2pil(vaedecode_17[0]).show()
+        ToolUtils.tensor2pil(vaedecode_17[0]).save(_outputname)
+        
 
 if __name__ == "__main__":
-    print("main called")
+
+    createImage("1.png")
+
+    #for x in range(1,10): 
+    #    createImage(str(x)+"_.png")

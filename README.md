@@ -1,1 +1,3 @@
-# Beam-SDXLAsync
+# BeamSDXL Async
+
+v2 beam
