@@ -21,8 +21,6 @@ if env.is_remote():
         EmptyLatentImage,
         CheckpointLoaderSimple,
         CLIPTextEncode,
-        LoraLoader,
-        ControlNetLoader
     )
 
 
@@ -116,7 +114,7 @@ def load_models():
     name="SDXL",
     cpu=8,
     memory="32Gi",
-    gpu="A100-40",
+    gpu="A10G",
     image=image,
     volumes=[Volume(name="models", mount_path=volume_path)],
     keep_warm_seconds=600
@@ -140,8 +138,7 @@ def handler(context,**inputs):
         height = inputs["height"]
         num_images = inputs["num_images"]
         callback_url = inputs["callback_url"]
-        person_original =  PIL.Image.open(BytesIO(base64.b64decode(image_data))).convert("RGB")
-
+        
         fprompt, fnegprompt = set_style(prompt,style)
     
         s3 = boto3.client("s3",region_name='us-east-1',aws_access_key_id=my_key,aws_secret_access_key=my_secret)
